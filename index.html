@@ -483,9 +483,11 @@
             <option value="7.20">7.20</option>
             <option value="7.40">7.40</option>
             <option value="7.60">7.60</option>
+            <option value="7.61">7.61</option>
             <option value="8.00">8.00</option>
             <option value="8.20">8.20</option>
             <option value="8.40">8.40</option>
+            <option value="8.60">8.60</option>
             <option value="9.00">9.00</option>
             <option value="9.20">9.20</option>
             <option value="9.40">9.40</option>
@@ -503,9 +505,11 @@
             <option value="12.20">12.20</option>
             <option value="12.40">12.40</option>
             <option value="12.60">12.60</option>
+            <option value="12.70">12.70</option>
             <option value="13.00">13.00</option>
             <option value="13.20">13.20</option>
             <option value="13.40">13.40</option>
+            <option value="13.42">13.42</option>
             <option value="13.60">13.60</option>
           </select>
         </div>
@@ -563,24 +567,25 @@
       const firmwareSelect = document.getElementById('firmwareSelect');
       const gridBg = document.getElementById('gridBg');
 
-      let lineCount = 3;
+      const maxLogLines = 200;
 
-      // Update log count
       function updateLogCount() {
-        logCount.textContent = `${lineCount} lines`;
+        logCount.textContent = `${consoleOutput.childElementCount} lines`;
       }
 
-      // Custom logging function
       function addLog(message, type = 'info') {
         const line = document.createElement('div');
         line.className = `log-line ${type}`;
         const timestamp = new Date().toLocaleTimeString();
         line.textContent = `[${timestamp}] > ${message}`;
         consoleOutput.appendChild(line);
+        while (consoleOutput.childElementCount > maxLogLines) {
+          consoleOutput.firstElementChild.remove();
+        }
         consoleOutput.scrollTop = consoleOutput.scrollHeight;
-        lineCount++;
         updateLogCount();
       }
+      window.addUiLog = addLog;
 
       // Hijack native console methods to display in UI
       const originalLog = console.log;
@@ -617,7 +622,12 @@
             }
 
             firmwareSelect.disabled = false;
-            addLog('Unable to detect firmware. Select a supported firmware manually.', 'warn');
+            exploitBtn.disabled = true;
+            exploitBtn.textContent = 'PS5 REQUIRED';
+            statusDot.className = 'status-dot error';
+            statusText.textContent = 'NOT DETECTED';
+            statusText.style.color = 'var(--neon-red)';
+            addLog('PS5 firmware could not be detected. Manual selection cannot override console firmware.', 'error');
             return;
           }
 
@@ -625,6 +635,11 @@
             .find((item) => item.value === detectedFw);
           if (!option) {
             firmwareSelect.disabled = false;
+            exploitBtn.disabled = true;
+            exploitBtn.textContent = 'UNSUPPORTED FIRMWARE';
+            statusDot.className = 'status-dot error';
+            statusText.textContent = 'UNSUPPORTED';
+            statusText.style.color = 'var(--neon-red)';
             addLog(`Detected firmware ${detectedFw} is not supported.`, 'error');
             return;
           }
@@ -656,7 +671,6 @@
       // Clear Console
       clearBtn.addEventListener('click', () => {
         consoleOutput.innerHTML = '<div class="log-line info">> Console cleared.</div>';
-        lineCount = 1;
         updateLogCount();
       });
 
@@ -679,14 +693,16 @@
           return;
         }
 
+        if (selectedFw !== window.fw_str) {
+          addLog('The selected firmware does not match the console firmware; use Auto Detect.', 'error');
+          return;
+        }
+
         if (typeof window.startExploit !== 'function') {
           addLog('Exploit runtime is still loading. Try again in a moment.', 'error');
           return;
         }
 
-        statusDot.className = 'status-dot active';
-        statusText.textContent = 'RUNNING';
-        statusText.style.color = 'var(--neon-green)';
         exploitBtn.disabled = true;
         exploitBtn.textContent = 'EXPLOITING...';
         exploitBtn.style.opacity = '0.7';
@@ -697,25 +713,35 @@
         window.startExploit()
           .then(() => {
             addLog(`Exploit sequence for ${selectedFw} completed.`, 'success');
-            statusDot.className = 'status-dot';
-            statusText.textContent = 'COMPLETED';
-            statusText.style.color = 'var(--neon-blue)';
           })
           .catch((error) => {
-            statusDot.className = 'status-dot error';
-            statusText.textContent = 'ERROR';
-            statusText.style.color = 'var(--neon-red)';
             addLog(error instanceof Error ? error.message : String(error), 'error');
-          })
-          .finally(() => {
-            exploitBtn.disabled = false;
-            exploitBtn.textContent = 'RUN EXPLOIT AGAIN';
-            exploitBtn.style.opacity = '1';
-            exploitBtn.style.cursor = 'pointer';
           });
       });
 
-      // Initialize count
+      window.addEventListener('exploit-state', (event) => {
+        const state = event.detail?.state;
+        if (state === 'running') {
+         statusDot.className = 'status-dot active';
+         statusText.textContent = 'RUNNING';
+         statusText.style.color = 'var(--neon-green)';
+         exploitBtn.disabled = true;
+         exploitBtn.textContent = 'EXPLOITING...';
+         exploitBtn.style.opacity = '0.7';
+         exploitBtn.style.cursor = 'not-allowed';
+        } else if (state === 'completed') {
+         statusDot.className = 'status-dot';
+         statusText.textContent = 'COMPLETED';
+         statusText.style.color = 'var(--neon-blue)';
+         exploitBtn.textContent = 'COMPLETED';
+        } else if (state === 'failed') {
+         statusDot.className = 'status-dot error';
+         statusText.textContent = 'RELOAD REQUIRED';
+         statusText.style.color = 'var(--neon-red)';
+         exploitBtn.textContent = 'RELOAD PAGE TO RETRY';
+        }
+      });
+
       updateLogCount();
     })();
   </script>
