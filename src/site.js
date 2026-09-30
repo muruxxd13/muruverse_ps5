@@ -8,15 +8,24 @@ if (!output) {
 }
 
 function writeLog(message, type = "log", replace = false) {
+  if (typeof window.addUiLog === "function" && !replace) {
+    window.addUiLog(message, type === "log" ? "info" : type);
+    return;
+  }
+
   let line = replace ? output.lastElementChild : null;
   if (!line) {
     line = document.createElement("div");
     output.appendChild(line);
   }
+  line.className = `log-line ${type === "log" ? "info" : type}`;
   let marker = "*";
   if (type === "error") marker = "-";
   if (type === "info" || type === "success") marker = "+";
   line.textContent = `[${marker}] ${message}`;
+  while (output.childElementCount > 200) {
+    output.firstElementChild.remove();
+  }
   output.scrollTop = output.scrollHeight;
 }
 
@@ -29,6 +38,7 @@ window.writeLog = writeLog;
 window.jb = { mark: writeEvent };
 
 let exploitPromise = null;
+let exploitState = "idle";
 
 async function getPrimitive() {
   writeLog("Starting WebKit exploit");
@@ -55,18 +65,25 @@ function getWebKitBase() {
 }
 
 async function startExploit() {
-  if (exploitPromise) {
-    throw new Error("Exploit is already running");
+  if (exploitState !== "idle") {
+    throw new Error(
+      exploitState === "running"
+        ? "Exploit is already running"
+        : "This exploit session cannot be restarted safely. Reload the page and try again.",
+    );
   }
+
+  exploitState = "running";
+  window.dispatchEvent(new CustomEvent("exploit-state", {
+    detail: { state: exploitState },
+  }));
 
   exploitPromise = (async () => {
     const rejection = window.firmware.rejection();
     if (rejection)
       throw new Error(rejection);
 
-    if (window.offsetsReady) {
-      await window.offsetsReady;
-    }
+    await window.offsetsReady;
 
     writeLog("Credits: ntfargo, ufm42, Sonic_Iso, Jordy, Dr. Yenyen, TheFlow, SlidyBat, Flatz, cow, nhk, bollarz, Sleirsgoevy, EchoStretch, EarthOnion", "info");
     writeLog(`Agent: ${navigator.userAgent}`, "info");
@@ -80,6 +97,16 @@ async function startExploit() {
 
   try {
     await exploitPromise;
+    exploitState = "completed";
+    window.dispatchEvent(new CustomEvent("exploit-state", {
+      detail: { state: exploitState },
+    }));
+  } catch (error) {
+    exploitState = "failed";
+    window.dispatchEvent(new CustomEvent("exploit-state", {
+      detail: { state: exploitState },
+    }));
+    throw error;
   } finally {
     exploitPromise = null;
   }
@@ -87,7 +114,7 @@ async function startExploit() {
 
 window.startExploit = startExploit;
 
-if (!document.getElementById("exploitBtn")) {
+if (!window.firmware.rejection()) {
   window.startExploit().catch((error) => {
     writeLog(error instanceof Error ? error.message : String(error), "error");
   });
